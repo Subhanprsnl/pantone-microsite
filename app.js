@@ -201,15 +201,13 @@
     shot.style.transform = `translate3d(${W / 2 - s * cx}px, ${H / 2 - s * cy}px, 0) scale(${s})`;
     const o = lerp(SOFT[i], SOFT[i + 1], smooth(0.12, 0.7, f));
     soft.style.opacity = o;
-    soft.style.visibility = o < 0.005 ? 'hidden' : 'visible';
-    sharp.style.visibility = o > 0.995 ? 'hidden' : 'visible';
 
     // Each scene lifts away as you leave it, and returns when you scroll back
     copies.forEach((c, k) => {
       const d = p - k;
       if (d > 0.001 && k < scenes.length - 1) {
         c.style.opacity = 1 - smooth(0, 0.6, d);
-        c.style.transform = `translate3d(0, ${-d * 70}px, 0) scale(${1 - d * 0.04})`;
+        c.style.transform = `translate3d(0, ${Math.round(-d * 70)}px, 0)`;
       } else if (c.style.opacity !== '') {
         c.style.opacity = '';
         c.style.transform = '';
@@ -236,6 +234,8 @@
     layout();
     target = Math.max(0, Math.min(scenes.length - 1, Math.round(progress())));
     setTimeout(() => body.classList.add('glint-go'), reduced ? 0 : 1300);
+    glint.addEventListener('animationend', () => glint.classList.add('done'), { once: true });
+    if (reduced) glint.classList.add('done');
   }
 
   requestAnimationFrame(() => reveal.classList.add('go'));
@@ -273,6 +273,7 @@
       spring.on = false;
     }
     scrollTo(0, spring.y);
+    render(); // camera and content move together in this frame
     if (spring.on) requestAnimationFrame(springStep);
     else root.style.scrollSnapType = '';
   }

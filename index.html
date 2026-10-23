@@ -6,11 +6,18 @@
   <title>Pantone: Beyond the Color</title>
   <meta name="description" content="The Pantone Color of the Year 2027 Experience: Beyond the Color. Thursday, December 3, in Miami. Free and open to the public.">
   <meta name="theme-color" content="#d4d0ca">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Pantone: Beyond the Color">
+  <meta property="og:description" content="The Pantone Color of the Year 2027 Experience. Thursday, December 3, in Miami. Free and open to the public.">
+  <meta property="og:image" content="flyer.webp">
+  <meta name="twitter:card" content="summary_large_image">
   <script>document.documentElement.classList.add('js', 'locked');</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="preload" as="image" href="flyer.webp">
+  <link rel="preload" as="image" href="flyer.webp" media="(max-width: 899px), (max-aspect-ratio: 1/1)">
+  <link rel="preload" as="image" href="flyer-fade.webp" media="(min-width: 900px) and (min-aspect-ratio: 1/1)">
   <link rel="preload" as="image" href="flyer-soft.webp">
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -34,8 +41,14 @@
   <div class="stage" id="stage" aria-hidden="true">
     <div class="shot" id="shot">
       <div class="fill"></div>
-      <img class="sharp" id="sharp" src="flyer.webp" width="1080" height="1217" alt="">
-      <img class="soft" id="soft" src="flyer-soft.webp" width="540" height="608" alt="">
+      <picture>
+        <source media="(min-width: 900px) and (min-aspect-ratio: 1/1)" srcset="flyer-fade.webp">
+        <img class="sharp" id="sharp" src="flyer.webp" width="1080" height="1217" alt="">
+      </picture>
+      <picture>
+        <source media="(min-width: 900px) and (min-aspect-ratio: 1/1)" srcset="flyer-soft-fade.webp">
+        <img class="soft" id="soft" src="flyer-soft.webp" width="540" height="608" alt="">
+      </picture>
       <div class="glint" id="glint"></div>
     </div>
   </div>
@@ -308,7 +321,7 @@
           <h2 class="sheet-title" tabindex="-1">You’re on the list.</h2>
           <p class="sheet-sub" data-done-copy></p>
           <div class="done-card">
-            <img src="flyer.webp" alt="" width="1080" height="1217">
+            <img src="flyer.webp" alt="" width="1080" height="1217" loading="lazy" decoding="async">
             <p><strong>Beyond the Color</strong>Thursday, December 3<br>11:00 AM – 6:00 PM EST<br>Miami, Florida</p>
           </div>
           <button class="pill pill--wide" type="button" data-ics>Add to calendar</button>
