@@ -136,6 +136,7 @@
       height: (BOX[3] - BOX[1]) * img.h + 'px',
     });
     measureTabs();
+    railH = railTrack.clientHeight;
     // Ticket punch-outs sit on the perforation
     const pf = document.getElementById('passFoot');
     if (pf) document.getElementById('passIn').style.setProperty('--notch', pf.offsetTop + 'px');
@@ -151,7 +152,7 @@
   const railTrack = document.getElementById('railTrack');
   const railThumb = document.getElementById('railThumb');
 
-  let active = -1;
+  let active = -1, railH = 0, lastQ = -1, lastW = 0;
   function render() {
     queued = false;
     const p = progress();
@@ -159,14 +160,14 @@
     const f = p - i;
 
     // Custom scrollbar
-    const th = railTrack.clientHeight;
-    railThumb.style.transform = `translateY(${(p / (scenes.length - 1)) * th * 0.75}px)`;
+    railThumb.style.transform = `translate3d(0, ${(p / (scenes.length - 1)) * railH * 0.75}px, 0)`;
 
     // Island thumb rides with the scroll
     const a = tabs[i], b = tabs[i + 1];
     if (a) {
-      thumb.style.transform = `translateX(${lerp(a.x, b.x, f)}px)`;
-      thumb.style.width = lerp(a.w, b.w, f) + 'px';
+      thumb.style.transform = `translate3d(${lerp(a.x, b.x, f)}px, 0, 0)`;
+      const wNow = Math.round(lerp(a.w, b.w, f));
+      if (wNow !== lastW) { lastW = wNow; thumb.style.width = wNow + 'px'; }
     }
     const now = Math.round(p);
     if (now !== active) {
@@ -180,9 +181,12 @@
     }
 
     // The about line lights up word by word as you arrive
-    const q = reduced ? 1 : smooth(0.25, 0.95, p);
-    const n = ledeWords.length;
-    ledeWords.forEach((w, k) => { w.style.opacity = 0.16 + 0.84 * clamp01(q * (n + 2) - k); });
+    const q = reduced ? 1 : Math.round(smooth(0.25, 0.95, p) * 200) / 200;
+    if (q !== lastQ) {
+      lastQ = q;
+      const n = ledeWords.length;
+      ledeWords.forEach((w, k) => { w.style.opacity = (0.16 + 0.84 * clamp01(q * (n + 2) - k)).toFixed(3); });
+    }
 
     if (reduced) {
       shot.style.transform = 'none';
@@ -197,6 +201,7 @@
     shot.style.transform = `translate3d(${W / 2 - s * cx}px, ${H / 2 - s * cy}px, 0) scale(${s})`;
     const o = lerp(SOFT[i], SOFT[i + 1], smooth(0.12, 0.7, f));
     soft.style.opacity = o;
+    soft.style.visibility = o < 0.005 ? 'hidden' : 'visible';
     sharp.style.visibility = o > 0.995 ? 'hidden' : 'visible';
 
     // Each scene lifts away as you leave it, and returns when you scroll back
@@ -229,6 +234,7 @@
     body.classList.remove('intro');
     scenes[0].classList.add('in');
     layout();
+    target = Math.max(0, Math.min(scenes.length - 1, Math.round(progress())));
     setTimeout(() => body.classList.add('glint-go'), reduced ? 0 : 1300);
   }
 
@@ -240,20 +246,133 @@
       setTimeout(() => reveal.remove(), reduced ? 400 : 1400);
     });
 
+  /* ─── Scroll: one gesture, one glide ──────
+     Wheels and trackpads move one scene per gesture on a critically damped spring
+     (response 0.8s). New input retargets the spring and keeps its velocity, so it
+     can be redirected mid-glide without a jolt. Touch keeps native momentum and CSS
+     snap. Anything else that moves the page settles on the nearest scene. */
+
+  const coarse = matchMedia('(pointer: coarse)').matches;
+  const OMEGA = (2 * Math.PI) / 0.8;
+  const spring = { y: 0, v: 0, to: 0, on: false, last: 0 };
+  let target = 0;
+  const clampScene = (k) => Math.max(0, Math.min(scenes.length - 1, k));
+
+  function springStep(now) {
+    if (!spring.on) return;
+    const dt = Math.min(0.05, (now - spring.last) / 1000);
+    spring.last = now;
+    const steps = Math.max(1, Math.ceil(dt / 0.004)), h = dt / steps;
+    for (let k = 0; k < steps; k++) {
+      const acc = -OMEGA * OMEGA * (spring.y - spring.to) - 2 * OMEGA * spring.v;
+      spring.v += acc * h;
+      spring.y += spring.v * h;
+    }
+    if (Math.abs(spring.y - spring.to) < 0.4 && Math.abs(spring.v) < 6) {
+      spring.y = spring.to;
+      spring.on = false;
+    }
+    scrollTo(0, spring.y);
+    if (spring.on) requestAnimationFrame(springStep);
+    else root.style.scrollSnapType = '';
+  }
+  function glide(k) {
+    target = clampScene(k);
+    const to = target * sceneH;
+    if (reduced) { scrollTo(0, to); return; }
+    if (!spring.on) {
+      spring.y = scrollY;
+      spring.v = 0;
+      spring.on = true;
+      spring.last = performance.now();
+      root.style.scrollSnapType = 'none';
+      requestAnimationFrame(springStep);
+    }
+    spring.to = to;
+  }
+  function stopGlide() {
+    if (!spring.on) return;
+    spring.on = false;
+    root.style.scrollSnapType = '';
+  }
+  const scrollLocked = () => sheet.open || root.classList.contains('locked');
+
+  // Wheel / trackpad: detect gestures, ignore the inertia tail
+  if (!coarse) {
+    let wheelLast = 0, lastMag = 0, acc = 0, armed = true;
+    addEventListener('wheel', (e) => {
+      if (e.ctrlKey) return; // pinch-zoom
+      e.preventDefault();
+      if (scrollLocked()) return;
+      const now = performance.now();
+      const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * innerHeight : e.deltaY;
+      const mag = Math.abs(dy);
+      const fresh = now - wheelLast > 170 || (mag > lastMag * 1.7 && mag > 14);
+      wheelLast = now;
+      lastMag = mag;
+      if (fresh) { armed = true; acc = 0; }
+      if (!armed) return;
+      acc += dy;
+      if (Math.abs(acc) > 22) {
+        armed = false;
+        acc = 0;
+        glide(target + Math.sign(dy));
+      }
+    }, { passive: false });
+  }
+  addEventListener('touchstart', stopGlide, { passive: true });
+
+  // Keyboard
+  addEventListener('keydown', (e) => {
+    if (scrollLocked() || e.altKey || e.metaKey || e.ctrlKey) return;
+    const el = e.target instanceof Element ? e.target : document.body;
+    if (el.closest('input, select, textarea, [contenteditable]')) return;
+    const k = e.key;
+    let to = null;
+    if (k === 'ArrowDown' || k === 'PageDown' || (k === ' ' && !e.shiftKey && !el.closest('button, a'))) to = target + 1;
+    else if (k === 'ArrowUp' || k === 'PageUp' || (k === ' ' && e.shiftKey)) to = target - 1;
+    else if (k === 'Home') to = 0;
+    else if (k === 'End') to = scenes.length - 1;
+    if (to === null) return;
+    e.preventDefault();
+    glide(to);
+  });
+
+  // In-page links glide instead of jumping
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest('a[href^="#"]');
+    if (!a) return;
+    const k = scenes.findIndex((s) => '#' + s.id === a.getAttribute('href'));
+    if (k < 0) return;
+    e.preventDefault();
+    history.replaceState(null, '', a.getAttribute('href'));
+    glide(k);
+  });
+
+  // Whatever else moved the page (find-in-page, touch on a laptop), settle on a scene
+  const settle = () => {
+    if (spring.on || railDrag || scrollLocked()) return;
+    const k = Math.round(progress());
+    target = k;
+    if (!coarse && Math.abs(scrollY - k * sceneH) > 1) glide(k);
+  };
+  if ('onscrollend' in window) addEventListener('scrollend', settle);
+  else { let st = 0; addEventListener('scroll', () => { clearTimeout(st); st = setTimeout(settle, 160); }, { passive: true }); }
+
+  addEventListener('resize', () => { if (!spring.on) scrollTo(0, target * sceneH); });
+
   /* ─── Custom scrollbar ─────────────────── */
 
-  const toScene = (k) => scrollTo({ top: k * sceneH, behavior: reduced ? 'auto' : 'smooth' });
-  railTrack.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => toScene(+b.dataset.to)));
+  railTrack.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => glide(+b.dataset.to)));
 
   let railDrag = null;
   railThumb.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    const th = railTrack.clientHeight;
-    railDrag = { id: e.pointerId, grab: e.clientY - railThumb.getBoundingClientRect().top, top: railTrack.getBoundingClientRect().top, range: th * 0.75 };
+    stopGlide();
+    railDrag = { id: e.pointerId, grab: e.clientY - railThumb.getBoundingClientRect().top, top: railTrack.getBoundingClientRect().top, range: railH * 0.75 };
     railThumb.setPointerCapture(e.pointerId);
     rail.classList.add('dragging');
     root.style.scrollSnapType = 'none';
-    root.style.scrollBehavior = 'auto';
   });
   railThumb.addEventListener('pointermove', (e) => {
     if (!railDrag || e.pointerId !== railDrag.id) return;
@@ -265,17 +384,18 @@
     railDrag = null;
     rail.classList.remove('dragging');
     root.style.scrollSnapType = '';
-    root.style.scrollBehavior = '';
-    toScene(Math.round(progress()));
+    glide(Math.round(progress()));
   };
   railThumb.addEventListener('pointerup', railEnd);
   railThumb.addEventListener('pointercancel', railEnd);
-  // Clicking the bare track jumps toward that point
   railTrack.addEventListener('pointerdown', (e) => {
     if (e.target !== railTrack) return;
     const r = railTrack.getBoundingClientRect();
-    toScene(Math.round(clamp01((e.clientY - r.top) / r.height) * (scenes.length - 1)));
+    glide(Math.round(clamp01((e.clientY - r.top) / r.height) * (scenes.length - 1)));
   });
+
+  // Start where the URL points
+  target = clampScene(Math.round(progress()));
 
   /* ─── Island (phones: open / close the sections) ─── */
 
